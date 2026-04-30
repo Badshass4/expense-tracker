@@ -22,7 +22,6 @@ cp .env.example .env
 
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_ANON_KEY` - Your Supabase anonymous key
-- `JWT_SECRET` - A secure secret key for JWT tokens
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - Environment (development/production)
 
@@ -67,7 +66,37 @@ src/
 
 - `GET /api/health` - Check if server is running
 
-_More endpoints coming soon..._
+### Authentication
+
+- `POST /api/auth/register` - Register with Supabase Auth
+- `POST /api/auth/login` - Login with Supabase Auth
+- `GET /api/auth/me` - Get the current Supabase Auth user
+- `POST /api/auth/logout` - Confirm client-side logout
+
+#### Register request
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "fullName": "Example User"
+}
+```
+
+#### Login request
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Successful register and login responses include `data.token`, which is the Supabase access token. Send it to protected routes as:
+
+```http
+Authorization: Bearer <token>
+```
 
 ## Next Steps
 

@@ -43,7 +43,7 @@ Stores additional user profile information.
 - `id` - UUID (Primary Key/Foreign Key → auth.users)
 - `full_name` - User's full name
 - `avatar_url` - Profile picture URL
-- `default_currency` - Preferred currency (default: USD)
+- `default_currency` - Preferred currency (default: INR)
 - `monthly_budget` - Monthly budget limit
 - `theme` - UI theme (light/dark)
 

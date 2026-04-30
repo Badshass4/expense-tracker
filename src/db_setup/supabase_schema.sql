@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name VARCHAR(100),
   avatar_url TEXT,
-  default_currency VARCHAR(3) DEFAULT 'USD',
+  default_currency VARCHAR(3) DEFAULT 'INR',
   monthly_budget DECIMAL(10, 2),
   theme VARCHAR(10) DEFAULT 'light',
   created_at TIMESTAMP DEFAULT now(),
@@ -134,26 +134,31 @@ CREATE POLICY "Users can delete own budgets" ON budgets
 
 -- This function will be used to create default categories when a user signs up
 CREATE OR REPLACE FUNCTION create_default_categories()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO categories (user_id, name, color, icon) VALUES
     (NEW.id, 'Rent', '#0B74DE', 'home'),
-    (NEW.id, 'Bills', '#F59E0B', 'file-invoice'),
+    (NEW.id, 'Bills', '#F59E0B', 'file-text'),
     (NEW.id, 'Grocery & Flowers', '#EF4444', 'shopping-cart'),
-    (NEW.id, 'Outside Food', '#FB7185', 'utensils'),
+    (NEW.id, 'Outside Food', '#FB7185', 'coffee'),
     (NEW.id, 'Shopping', '#EC4899', 'shopping-bag'),
-    (NEW.id, 'Travel', '#6366F1', 'plane'),
-    (NEW.id, 'Bike', '#0EA5E9', 'bicycle'),
+    (NEW.id, 'Travel', '#6366F1', 'navigation'),
+    (NEW.id, 'Bike', '#0EA5E9', 'truck'),
     (NEW.id, 'Salon', '#A855F7', 'scissors'),
-    (NEW.id, 'Medicine', '#10B981', 'first-aid'),
+    (NEW.id, 'Medicine', '#10B981', 'activity'),
     (NEW.id, 'Utilities', '#F97316', 'zap'),
     (NEW.id, 'Health', '#22C55E', 'heart'),
-    (NEW.id, 'Other', '#6B7280', 'dots-horizontal');
+    (NEW.id, 'Other', '#6B7280', 'more-horizontal');
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 -- This trigger will call the function when a new user is created
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 CREATE TRIGGER on_auth_user_created
 AFTER INSERT ON auth.users
 FOR EACH ROW
@@ -165,13 +170,21 @@ EXECUTE FUNCTION create_default_categories();
 
 -- Auto-create user profile when auth user is created
 CREATE OR REPLACE FUNCTION create_user_profile()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO user_profiles (id, full_name)
-  VALUES (NEW.id, NEW.email);
+  VALUES (
+    NEW.id,
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), NEW.email)
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS on_auth_user_profile_created ON auth.users;
 
 CREATE TRIGGER on_auth_user_profile_created
 AFTER INSERT ON auth.users

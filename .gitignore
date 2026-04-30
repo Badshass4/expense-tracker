@@ -1,0 +1,11 @@
+# Git ignore file
+node_modules/
+.env
+.env.local
+.DS_Store
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

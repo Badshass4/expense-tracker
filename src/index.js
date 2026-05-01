@@ -6,7 +6,7 @@ const routes = require("./routes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const HOST = "0.0.0.0";
+const BASE_URL = process.env.BASE_URL || "http://localhost";
 const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -51,8 +51,8 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start Server
-app.listen(PORT, HOST, () => {
-  console.log(`Server running on http://${HOST}:${PORT}`);
+app.listen(PORT, BASE_URL, () => {
+  console.log(`Server running on http://${BASE_URL}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
 

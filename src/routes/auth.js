@@ -3,6 +3,10 @@ const supabase = require("../config/supabase");
 const { supabaseAdmin } = require("../config/supabase");
 const AppError = require("../utils/errors");
 const authMiddleware = require("../middleware/auth");
+const {
+  decryptPasswordForAuth,
+  hashLegacyPasswordForAuth,
+} = require("../utils/passwordEncryption");
 
 const router = express.Router();
 
@@ -11,6 +15,17 @@ const normalizeEmail = (email) =>
     .trim()
     .toLowerCase();
 const normalizeFullName = (fullName) => String(fullName || "").trim();
+const decryptRequestPassword = (encryptedPassword) => {
+  try {
+    return decryptPasswordForAuth(encryptedPassword);
+  } catch (error) {
+    if (error.message === "Password decryption is not configured.") {
+      throw new AppError(error.message, 500);
+    }
+
+    throw new AppError("Invalid encrypted password.", 400);
+  }
+};
 
 const formatAuthResponse = (data) => ({
   user: data.user
@@ -36,16 +51,14 @@ const formatAuthResponse = (data) => ({
 router.post("/register", async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
-    const { password } = req.body;
+    const { encryptedPassword } = req.body;
     const fullName = normalizeFullName(req.body.fullName);
 
-    if (!email || !password) {
-      return next(new AppError("Email and password are required.", 400));
+    if (!email || !encryptedPassword) {
+      return next(new AppError("Email and encrypted password are required.", 400));
     }
 
-    if (password.length < 6) {
-      return next(new AppError("Password must be at least 6 characters.", 400));
-    }
+    const password = decryptRequestPassword(encryptedPassword);
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -76,16 +89,40 @@ router.post("/register", async (req, res, next) => {
 router.post("/login", async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
-    const { password } = req.body;
+    const { encryptedPassword } = req.body;
 
-    if (!email || !password) {
-      return next(new AppError("Email and password are required.", 400));
+    if (!email || !encryptedPassword) {
+      return next(new AppError("Email and encrypted password are required.", 400));
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const password = decryptRequestPassword(encryptedPassword);
+
+    let { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
+    if (error) {
+      const legacyPasswordHash = hashLegacyPasswordForAuth({ email, password });
+      const legacyLogin = await supabase.auth.signInWithPassword({
+        email,
+        password: legacyPasswordHash,
+      });
+
+      data = legacyLogin.data;
+      error = legacyLogin.error;
+
+      if (!error && supabaseAdmin && data.user?.id) {
+        const { error: migrationError } = await supabaseAdmin.auth.admin.updateUserById(
+          data.user.id,
+          { password },
+        );
+
+        if (migrationError) {
+          return next(new AppError(migrationError.message, migrationError.status || 500));
+        }
+      }
+    }
 
     if (error) {
       return next(new AppError(error.message, error.status || 401));

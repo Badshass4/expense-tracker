@@ -55,6 +55,37 @@ CREATE TABLE IF NOT EXISTS budgets (
   UNIQUE(user_id, category_id, start_date)
 );
 
+-- 5. Create Cash Accounts Table (manual Banks, no bank credentials)
+CREATE TABLE IF NOT EXISTS cash_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name VARCHAR(80) NOT NULL,
+  balance DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  color VARCHAR(7) DEFAULT '#111827',
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- 6. Create Income Entries Table
+CREATE TABLE IF NOT EXISTS income_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  source VARCHAR(120) NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  income_type VARCHAR(20) NOT NULL DEFAULT 'one-time',
+  frequency VARCHAR(20),
+  income_date DATE,
+  start_date DATE,
+  end_date DATE,
+  is_active BOOLEAN DEFAULT true,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now(),
+  CHECK (income_type IN ('one-time', 'recurring')),
+  CHECK (frequency IS NULL OR frequency = 'monthly')
+);
+
 -- ===========================
 -- Create Indexes for Performance
 -- ===========================
@@ -65,6 +96,10 @@ CREATE INDEX idx_expenses_date ON expenses(expense_date);
 CREATE INDEX idx_expenses_user_date ON expenses(user_id, expense_date);
 CREATE INDEX idx_categories_user_id ON categories(user_id);
 CREATE INDEX idx_budgets_user_id ON budgets(user_id);
+CREATE INDEX idx_cash_accounts_user_id ON cash_accounts(user_id);
+CREATE INDEX idx_income_entries_user_id ON income_entries(user_id);
+CREATE INDEX idx_income_entries_date ON income_entries(user_id, income_date);
+CREATE INDEX idx_income_entries_recurring ON income_entries(user_id, start_date, end_date);
 
 -- ===========================
 -- Enable Row Level Security (RLS)
@@ -74,6 +109,8 @@ ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cash_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE income_entries ENABLE ROW LEVEL SECURITY;
 
 -- ===========================
 -- Row Level Security Policies
@@ -126,6 +163,32 @@ CREATE POLICY "Users can update own budgets" ON budgets
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own budgets" ON budgets
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Cash Accounts: Users can only see and edit their own manual Banks
+CREATE POLICY "Users can view own cash accounts" ON cash_accounts
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create cash accounts" ON cash_accounts
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own cash accounts" ON cash_accounts
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own cash accounts" ON cash_accounts
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Income Entries: Users can only see and edit their own income entries
+CREATE POLICY "Users can view own income entries" ON income_entries
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create income entries" ON income_entries
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own income entries" ON income_entries
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own income entries" ON income_entries
   FOR DELETE USING (auth.uid() = user_id);
 
 -- ===========================

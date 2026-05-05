@@ -86,6 +86,21 @@ CREATE TABLE IF NOT EXISTS income_entries (
   CHECK (frequency IS NULL OR frequency = 'monthly')
 );
 
+-- 7. Create Savings Goals Table
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  target_amount DECIMAL(12, 2) NOT NULL,
+  current_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  target_date DATE,
+  color VARCHAR(7) DEFAULT '#2563eb',
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now(),
+  CHECK (current_amount <= target_amount)
+);
+
 -- ===========================
 -- Create Indexes for Performance
 -- ===========================
@@ -100,6 +115,7 @@ CREATE INDEX idx_cash_accounts_user_id ON cash_accounts(user_id);
 CREATE INDEX idx_income_entries_user_id ON income_entries(user_id);
 CREATE INDEX idx_income_entries_date ON income_entries(user_id, income_date);
 CREATE INDEX idx_income_entries_recurring ON income_entries(user_id, start_date, end_date);
+CREATE INDEX idx_savings_goals_user_id ON savings_goals(user_id);
 
 -- ===========================
 -- Enable Row Level Security (RLS)
@@ -111,6 +127,7 @@ ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cash_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE income_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE savings_goals ENABLE ROW LEVEL SECURITY;
 
 -- ===========================
 -- Row Level Security Policies
@@ -189,6 +206,19 @@ CREATE POLICY "Users can update own income entries" ON income_entries
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own income entries" ON income_entries
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Savings Goals: Users can only see and edit their own savings goals
+CREATE POLICY "Users can view own savings goals" ON savings_goals
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create savings goals" ON savings_goals
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own savings goals" ON savings_goals
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own savings goals" ON savings_goals
   FOR DELETE USING (auth.uid() = user_id);
 
 -- ===========================

@@ -18,6 +18,20 @@ const expenseSelect = `
   )
 `;
 
+const incomeSelect = `
+  id,
+  source,
+  amount,
+  income_type,
+  frequency,
+  income_date,
+  start_date,
+  end_date,
+  is_active,
+  notes,
+  created_at
+`;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const toDateString = (date) => date.toISOString().slice(0, 10);
@@ -61,6 +75,9 @@ const getLastFiveMonthRange = (date) => {
 const sumExpenses = (expenses) =>
   expenses.reduce((total, expense) => total + Number(expense.amount || 0), 0);
 
+const sumIncome = (incomeEntries, range) =>
+  incomeEntries.reduce((total, income) => total + getIncomeContributionForRange(income, range), 0);
+
 const getInclusiveDayCount = (startDate, endDate) =>
   Math.floor((parseDateString(endDate) - parseDateString(startDate)) / MS_PER_DAY) + 1;
 
@@ -73,6 +90,37 @@ const getAverageDailyExpense = (totalAmount, range, currentDate = new Date()) =>
   }
 
   return totalAmount / getInclusiveDayCount(range.start, effectiveEnd);
+};
+
+const getMonthStart = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+
+const getOverlappingMonthCount = (income, range) => {
+  const rangeStart = parseDateString(range.start);
+  const rangeEnd = parseDateString(range.end);
+  const incomeStart = income.start_date ? parseDateString(income.start_date) : rangeStart;
+  const incomeEnd = income.end_date ? parseDateString(income.end_date) : rangeEnd;
+  const start = getMonthStart(new Date(Math.max(rangeStart.getTime(), incomeStart.getTime())));
+  const end = getMonthStart(new Date(Math.min(rangeEnd.getTime(), incomeEnd.getTime())));
+
+  if (start > end) {
+    return 0;
+  }
+
+  return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() + 1;
+};
+
+const getIncomeContributionForRange = (income, range) => {
+  const amount = Number(income.amount || 0);
+
+  if (!income.is_active) {
+    return 0;
+  }
+
+  if (income.income_type === "one-time") {
+    return income.income_date >= range.start && income.income_date <= range.end ? amount : 0;
+  }
+
+  return amount * getOverlappingMonthCount(income, range);
 };
 
 const getPercentChange = (currentTotal, previousTotal) => {
@@ -231,6 +279,21 @@ const parsePositiveInt = (value, fallback) => {
 
 const DEFAULT_BUDGET_START = "1970-01-01";
 
+const isIncomeInRange = (income, range) => {
+  if (!income.is_active) {
+    return false;
+  }
+
+  if (income.income_type === "one-time") {
+    return income.income_date >= range.start && income.income_date <= range.end;
+  }
+
+  const startsBeforeRangeEnds = !income.start_date || income.start_date <= range.end;
+  const endsAfterRangeStarts = !income.end_date || income.end_date >= range.start;
+
+  return startsBeforeRangeEnds && endsAfterRangeStarts;
+};
+
 router.get("/summary", async (req, res, next) => {
   try {
     const now = new Date();
@@ -375,7 +438,7 @@ router.get("/expenses", async (req, res, next) => {
       pagedReportQuery = pagedReportQuery.eq("category_id", req.query.categoryId);
     }
 
-    const [summaryResult, reportResult, monthlyTrendResult, budgetsResult] = await Promise.all([
+    const [summaryResult, reportResult, monthlyTrendResult, budgetsResult, incomeResult] = await Promise.all([
       reportQuery,
       pagedReportQuery,
       monthlyTrendQuery,
@@ -384,8 +447,13 @@ router.get("/expenses", async (req, res, next) => {
         .select("category_id, limit_amount, alert_threshold")
         .eq("user_id", req.user.id)
         .eq("start_date", DEFAULT_BUDGET_START),
+      userSupabase
+        .from("income_entries")
+        .select(incomeSelect)
+        .eq("user_id", req.user.id)
+        .order("created_at", { ascending: false }),
     ]);
-    const failedResult = [summaryResult, reportResult, monthlyTrendResult, budgetsResult].find(
+    const failedResult = [summaryResult, reportResult, monthlyTrendResult, budgetsResult, incomeResult].find(
       (result) => result.error,
     );
 
@@ -396,11 +464,14 @@ router.get("/expenses", async (req, res, next) => {
     const summaryExpenses = summaryResult.data || [];
     const expenses = reportResult.data || [];
     const monthlyTrendExpenses = monthlyTrendResult.data || [];
+    const incomeEntries = (incomeResult.data || []).filter((income) => isIncomeInRange(income, range));
     const budgetsByCategoryId = (budgetsResult.data || []).reduce((acc, budget) => {
       acc[budget.category_id] = budget;
       return acc;
     }, {});
     const totalAmount = sumExpenses(summaryExpenses);
+    const totalIncome = sumIncome(incomeEntries, range);
+    const netCashFlow = totalIncome - totalAmount;
     const averageDailyExpense = getAverageDailyExpense(totalAmount, range);
     const total = summaryResult.count || 0;
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit);
@@ -411,11 +482,18 @@ router.get("/expenses", async (req, res, next) => {
         range,
         summary: {
           totalAmount,
+          totalIncome,
+          netCashFlow,
+          savingsRate: totalIncome > 0 ? (netCashFlow / totalIncome) * 100 : 0,
           totalExpenses: total,
           averageDailyExpense,
           averageExpense: averageDailyExpense,
         },
         expenses,
+        incomeEntries: incomeEntries.map((income) => ({
+          ...income,
+          reportAmount: getIncomeContributionForRange(income, range),
+        })),
         pagination: {
           page,
           limit,

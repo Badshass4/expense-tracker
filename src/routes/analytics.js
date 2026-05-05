@@ -18,7 +18,15 @@ const expenseSelect = `
   )
 `;
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 const toDateString = (date) => date.toISOString().slice(0, 10);
+
+const parseDateString = (date) => {
+  const [year, month, day] = date.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
 
 const getMonthRange = (date) => {
   const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -53,6 +61,20 @@ const getLastFiveMonthRange = (date) => {
 const sumExpenses = (expenses) =>
   expenses.reduce((total, expense) => total + Number(expense.amount || 0), 0);
 
+const getInclusiveDayCount = (startDate, endDate) =>
+  Math.floor((parseDateString(endDate) - parseDateString(startDate)) / MS_PER_DAY) + 1;
+
+const getAverageDailyExpense = (totalAmount, range, currentDate = new Date()) => {
+  const today = toDateString(currentDate);
+  const effectiveEnd = range.end > today ? today : range.end;
+
+  if (range.start > effectiveEnd) {
+    return 0;
+  }
+
+  return totalAmount / getInclusiveDayCount(range.start, effectiveEnd);
+};
+
 const getPercentChange = (currentTotal, previousTotal) => {
   if (previousTotal === 0) {
     return currentTotal > 0 ? 100 : 0;
@@ -79,7 +101,7 @@ const getCategoryBreakdown = (expenses) => {
     acc[categoryId].totalAmount += Number(expense.amount || 0);
     acc[categoryId].expenseCount += 1;
     return acc;
-  }, initialTotals);
+  }, {});
 
   return Object.values(totals).sort((a, b) => b.totalAmount - a.totalAmount);
 };
@@ -129,7 +151,7 @@ const getMonthlyBreakdown = (expenses, monthKeys = []) => {
     acc[month].totalAmount += Number(expense.amount || 0);
     acc[month].expenseCount += 1;
     return acc;
-  }, {});
+  }, initialTotals);
 
   return Object.values(totals).sort((a, b) => a.month.localeCompare(b.month));
 };
@@ -298,6 +320,7 @@ router.get("/expenses", async (req, res, next) => {
     const expenses = reportResult.data || [];
     const monthlyTrendExpenses = monthlyTrendResult.data || [];
     const totalAmount = sumExpenses(expenses);
+    const averageDailyExpense = getAverageDailyExpense(totalAmount, range);
 
     res.json({
       success: true,
@@ -306,7 +329,8 @@ router.get("/expenses", async (req, res, next) => {
         summary: {
           totalAmount,
           totalExpenses: expenses.length,
-          averageExpense: expenses.length ? totalAmount / expenses.length : 0,
+          averageDailyExpense,
+          averageExpense: averageDailyExpense,
         },
         expenses,
         spendingByCategory: getCategoryBreakdown(expenses),

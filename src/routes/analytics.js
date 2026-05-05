@@ -83,7 +83,34 @@ const getPercentChange = (currentTotal, previousTotal) => {
   return ((currentTotal - previousTotal) / previousTotal) * 100;
 };
 
-const getCategoryBreakdown = (expenses) => {
+const getBudgetStatus = (spentAmount, limitAmount, alertThreshold = 0.8) => {
+  const safeLimit = Number(limitAmount || 0);
+  const safeSpent = Number(spentAmount || 0);
+
+  if (safeLimit <= 0) {
+    return {
+      budgetLimit: null,
+      remainingBudget: null,
+      usageRatio: 0,
+      alertThreshold,
+      isNearLimit: false,
+      isOverLimit: false,
+    };
+  }
+
+  const usageRatio = safeSpent / safeLimit;
+
+  return {
+    budgetLimit: safeLimit,
+    remainingBudget: safeLimit - safeSpent,
+    usageRatio,
+    alertThreshold,
+    isNearLimit: usageRatio >= alertThreshold && usageRatio < 1,
+    isOverLimit: usageRatio >= 1,
+  };
+};
+
+const getCategoryBreakdown = (expenses, budgetsByCategoryId = {}) => {
   const totals = expenses.reduce((acc, expense) => {
     const category = expense.categories || {};
     const categoryId = category.id || "uncategorized";
@@ -103,7 +130,16 @@ const getCategoryBreakdown = (expenses) => {
     return acc;
   }, {});
 
-  return Object.values(totals).sort((a, b) => b.totalAmount - a.totalAmount);
+  return Object.values(totals)
+    .map((item) => {
+      const budget = budgetsByCategoryId[item.categoryId];
+
+      return {
+        ...item,
+        ...getBudgetStatus(item.totalAmount, budget?.limit_amount, budget?.alert_threshold || 0.8),
+      };
+    })
+    .sort((a, b) => b.totalAmount - a.totalAmount);
 };
 
 const getDailyBreakdown = (expenses) => {
@@ -192,6 +228,8 @@ const parsePositiveInt = (value, fallback) => {
 
   return parsed;
 };
+
+const DEFAULT_BUDGET_START = "1970-01-01";
 
 router.get("/summary", async (req, res, next) => {
   try {
@@ -337,12 +375,19 @@ router.get("/expenses", async (req, res, next) => {
       pagedReportQuery = pagedReportQuery.eq("category_id", req.query.categoryId);
     }
 
-    const [summaryResult, reportResult, monthlyTrendResult] = await Promise.all([
+    const [summaryResult, reportResult, monthlyTrendResult, budgetsResult] = await Promise.all([
       reportQuery,
       pagedReportQuery,
       monthlyTrendQuery,
+      userSupabase
+        .from("budgets")
+        .select("category_id, limit_amount, alert_threshold")
+        .eq("user_id", req.user.id)
+        .eq("start_date", DEFAULT_BUDGET_START),
     ]);
-    const failedResult = [summaryResult, reportResult, monthlyTrendResult].find((result) => result.error);
+    const failedResult = [summaryResult, reportResult, monthlyTrendResult, budgetsResult].find(
+      (result) => result.error,
+    );
 
     if (failedResult) {
       return next(new AppError(failedResult.error.message, 400));
@@ -351,6 +396,10 @@ router.get("/expenses", async (req, res, next) => {
     const summaryExpenses = summaryResult.data || [];
     const expenses = reportResult.data || [];
     const monthlyTrendExpenses = monthlyTrendResult.data || [];
+    const budgetsByCategoryId = (budgetsResult.data || []).reduce((acc, budget) => {
+      acc[budget.category_id] = budget;
+      return acc;
+    }, {});
     const totalAmount = sumExpenses(summaryExpenses);
     const averageDailyExpense = getAverageDailyExpense(totalAmount, range);
     const total = summaryResult.count || 0;
@@ -375,7 +424,7 @@ router.get("/expenses", async (req, res, next) => {
           hasNextPage: page < totalPages,
           hasPreviousPage: page > 1,
         },
-        spendingByCategory: getCategoryBreakdown(summaryExpenses),
+        spendingByCategory: getCategoryBreakdown(summaryExpenses, budgetsByCategoryId),
         spendingByDate: getDailyBreakdown(summaryExpenses),
         spendingByMonth: getMonthlyBreakdown(monthlyTrendExpenses, monthlyTrendRange.months),
       },

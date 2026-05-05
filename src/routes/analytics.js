@@ -183,6 +183,16 @@ const getReportRange = (query) => {
   };
 };
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
 router.get("/summary", async (req, res, next) => {
   try {
     const now = new Date();
@@ -285,14 +295,20 @@ router.get("/expenses", async (req, res, next) => {
 
     const userSupabase = createUserSupabaseClient(req.accessToken);
     const monthlyTrendRange = getLastFiveMonthRange(new Date());
-    let reportQuery = userSupabase
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    const buildReportQuery = () =>
+      userSupabase
       .from("expenses")
-      .select(expenseSelect)
+      .select(expenseSelect, { count: "exact" })
       .eq("user_id", req.user.id)
       .gte("expense_date", range.start)
       .lte("expense_date", range.end)
       .order("expense_date", { ascending: false })
       .order("created_at", { ascending: false });
+    let reportQuery = buildReportQuery();
     let monthlyTrendQuery = userSupabase
       .from("expenses")
       .select("id, amount, expense_date")
@@ -310,17 +326,35 @@ router.get("/expenses", async (req, res, next) => {
       monthlyTrendQuery = monthlyTrendQuery.eq("category_id", req.query.categoryId);
     }
 
-    const [reportResult, monthlyTrendResult] = await Promise.all([reportQuery, monthlyTrendQuery]);
-    const failedResult = [reportResult, monthlyTrendResult].find((result) => result.error);
+    let pagedReportQuery = buildReportQuery()
+      .range(from, to);
+
+    if (req.query.search) {
+      pagedReportQuery = pagedReportQuery.ilike("description", `%${req.query.search}%`);
+    }
+
+    if (req.query.categoryId) {
+      pagedReportQuery = pagedReportQuery.eq("category_id", req.query.categoryId);
+    }
+
+    const [summaryResult, reportResult, monthlyTrendResult] = await Promise.all([
+      reportQuery,
+      pagedReportQuery,
+      monthlyTrendQuery,
+    ]);
+    const failedResult = [summaryResult, reportResult, monthlyTrendResult].find((result) => result.error);
 
     if (failedResult) {
       return next(new AppError(failedResult.error.message, 400));
     }
 
+    const summaryExpenses = summaryResult.data || [];
     const expenses = reportResult.data || [];
     const monthlyTrendExpenses = monthlyTrendResult.data || [];
-    const totalAmount = sumExpenses(expenses);
+    const totalAmount = sumExpenses(summaryExpenses);
     const averageDailyExpense = getAverageDailyExpense(totalAmount, range);
+    const total = summaryResult.count || 0;
+    const totalPages = total === 0 ? 1 : Math.ceil(total / limit);
 
     res.json({
       success: true,
@@ -328,13 +362,21 @@ router.get("/expenses", async (req, res, next) => {
         range,
         summary: {
           totalAmount,
-          totalExpenses: expenses.length,
+          totalExpenses: total,
           averageDailyExpense,
           averageExpense: averageDailyExpense,
         },
         expenses,
-        spendingByCategory: getCategoryBreakdown(expenses),
-        spendingByDate: getDailyBreakdown(expenses),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+        spendingByCategory: getCategoryBreakdown(summaryExpenses),
+        spendingByDate: getDailyBreakdown(summaryExpenses),
         spendingByMonth: getMonthlyBreakdown(monthlyTrendExpenses, monthlyTrendRange.months),
       },
     });

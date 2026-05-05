@@ -52,17 +52,32 @@ const validateExpensePayload = (payload) => {
   return null;
 };
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
 router.get("/", async (req, res, next) => {
   try {
     const userSupabase = createUserSupabaseClient(req.accessToken);
     const { search, date, categoryId } = req.query;
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
     let query = userSupabase
       .from("expenses")
-      .select(expenseSelect)
+      .select(expenseSelect, { count: "exact" })
       .eq("user_id", req.user.id)
       .order("expense_date", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
     if (search) {
       query = query.ilike("description", `%${search}%`);
@@ -76,16 +91,27 @@ router.get("/", async (req, res, next) => {
       query = query.eq("category_id", categoryId);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) {
       return next(new AppError(error.message, 400));
     }
 
+    const total = count || 0;
+    const totalPages = total === 0 ? 1 : Math.ceil(total / limit);
+
     res.json({
       success: true,
       data: {
         expenses: data,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
       },
     });
   } catch (error) {

@@ -32,6 +32,24 @@ const getMonthRange = (date) => {
   };
 };
 
+const getMonthKey = (date) =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+
+const getLastFiveMonthRange = (date) => {
+  const months = Array.from({ length: 5 }, (_, index) => {
+    const monthDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 4 + index, 1));
+
+    return getMonthKey(monthDate);
+  });
+  const startDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 4, 1));
+
+  return {
+    months,
+    start: getMonthRange(startDate).start,
+    end: getMonthRange(date).end,
+  };
+};
+
 const sumExpenses = (expenses) =>
   expenses.reduce((total, expense) => total + Number(expense.amount || 0), 0);
 
@@ -61,7 +79,7 @@ const getCategoryBreakdown = (expenses) => {
     acc[categoryId].totalAmount += Number(expense.amount || 0);
     acc[categoryId].expenseCount += 1;
     return acc;
-  }, {});
+  }, initialTotals);
 
   return Object.values(totals).sort((a, b) => b.totalAmount - a.totalAmount);
 };
@@ -86,7 +104,17 @@ const getDailyBreakdown = (expenses) => {
   return Object.values(totals).sort((a, b) => a.date.localeCompare(b.date));
 };
 
-const getMonthlyBreakdown = (expenses) => {
+const getMonthlyBreakdown = (expenses, monthKeys = []) => {
+  const initialTotals = monthKeys.reduce((acc, month) => {
+    acc[month] = {
+      month,
+      totalAmount: 0,
+      expenseCount: 0,
+    };
+
+    return acc;
+  }, {});
+
   const totals = expenses.reduce((acc, expense) => {
     const month = expense.expense_date.slice(0, 7);
 
@@ -234,7 +262,8 @@ router.get("/expenses", async (req, res, next) => {
     }
 
     const userSupabase = createUserSupabaseClient(req.accessToken);
-    let query = userSupabase
+    const monthlyTrendRange = getLastFiveMonthRange(new Date());
+    let reportQuery = userSupabase
       .from("expenses")
       .select(expenseSelect)
       .eq("user_id", req.user.id)
@@ -242,22 +271,32 @@ router.get("/expenses", async (req, res, next) => {
       .lte("expense_date", range.end)
       .order("expense_date", { ascending: false })
       .order("created_at", { ascending: false });
+    let monthlyTrendQuery = userSupabase
+      .from("expenses")
+      .select("id, amount, expense_date")
+      .eq("user_id", req.user.id)
+      .gte("expense_date", monthlyTrendRange.start)
+      .lte("expense_date", monthlyTrendRange.end);
 
     if (req.query.search) {
-      query = query.ilike("description", `%${req.query.search}%`);
+      reportQuery = reportQuery.ilike("description", `%${req.query.search}%`);
+      monthlyTrendQuery = monthlyTrendQuery.ilike("description", `%${req.query.search}%`);
     }
 
     if (req.query.categoryId) {
-      query = query.eq("category_id", req.query.categoryId);
+      reportQuery = reportQuery.eq("category_id", req.query.categoryId);
+      monthlyTrendQuery = monthlyTrendQuery.eq("category_id", req.query.categoryId);
     }
 
-    const { data, error } = await query;
+    const [reportResult, monthlyTrendResult] = await Promise.all([reportQuery, monthlyTrendQuery]);
+    const failedResult = [reportResult, monthlyTrendResult].find((result) => result.error);
 
-    if (error) {
-      return next(new AppError(error.message, 400));
+    if (failedResult) {
+      return next(new AppError(failedResult.error.message, 400));
     }
 
-    const expenses = data || [];
+    const expenses = reportResult.data || [];
+    const monthlyTrendExpenses = monthlyTrendResult.data || [];
     const totalAmount = sumExpenses(expenses);
 
     res.json({
@@ -272,7 +311,7 @@ router.get("/expenses", async (req, res, next) => {
         expenses,
         spendingByCategory: getCategoryBreakdown(expenses),
         spendingByDate: getDailyBreakdown(expenses),
-        spendingByMonth: getMonthlyBreakdown(expenses),
+        spendingByMonth: getMonthlyBreakdown(monthlyTrendExpenses, monthlyTrendRange.months),
       },
     });
   } catch (error) {

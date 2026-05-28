@@ -72,6 +72,21 @@ const getLastFiveMonthRange = (date) => {
   };
 };
 
+const getMonthKeysBetween = (startMonth, endMonth) => {
+  const [startYear, startMonthNumber] = startMonth.split("-").map(Number);
+  const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
+  const months = [];
+  let cursor = new Date(Date.UTC(startYear, startMonthNumber - 1, 1));
+  const end = new Date(Date.UTC(endYear, endMonthNumber - 1, 1));
+
+  while (cursor <= end) {
+    months.push(getMonthKey(cursor));
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+  }
+
+  return months;
+};
+
 const sumExpenses = (expenses) =>
   expenses.reduce((total, expense) => total + Number(expense.amount || 0), 0);
 
@@ -240,7 +255,58 @@ const getMonthlyBreakdown = (expenses, monthKeys = []) => {
   return Object.values(totals).sort((a, b) => a.month.localeCompare(b.month));
 };
 
+const getMonthlyCategoryComparison = (expenses, monthKeys = []) => {
+  const categoryTotals = expenses.reduce((acc, expense) => {
+    const category = expense.categories || {};
+    const categoryId = category.id || "uncategorized";
+    const month = expense.expense_date.slice(0, 7);
+
+    if (!acc[categoryId]) {
+      acc[categoryId] = {
+        categoryId,
+        categoryName: category.name || "Uncategorized",
+        color: category.color || "#3b82f6",
+        totalAmount: 0,
+        expenseCount: 0,
+        months: monthKeys.reduce((monthAcc, monthKey) => {
+          monthAcc[monthKey] = {
+            month: monthKey,
+            totalAmount: 0,
+            expenseCount: 0,
+          };
+
+          return monthAcc;
+        }, {}),
+      };
+    }
+
+    if (!acc[categoryId].months[month]) {
+      acc[categoryId].months[month] = {
+        month,
+        totalAmount: 0,
+        expenseCount: 0,
+      };
+    }
+
+    acc[categoryId].months[month].totalAmount += Number(expense.amount || 0);
+    acc[categoryId].months[month].expenseCount += 1;
+    acc[categoryId].totalAmount += Number(expense.amount || 0);
+    acc[categoryId].expenseCount += 1;
+
+    return acc;
+  }, {});
+
+  return Object.values(categoryTotals)
+    .map((category) => ({
+      ...category,
+      months: Object.values(category.months).sort((a, b) => a.month.localeCompare(b.month)),
+    }))
+    .sort((a, b) => b.totalAmount - a.totalAmount);
+};
+
 const isDateString = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+
+const isMonthString = (value) => /^\d{4}-\d{2}$/.test(value || "");
 
 const getReportRange = (query) => {
   if (query.month) {
@@ -505,6 +571,69 @@ router.get("/expenses", async (req, res, next) => {
         spendingByCategory: getCategoryBreakdown(summaryExpenses, budgetsByCategoryId),
         spendingByDate: getDailyBreakdown(summaryExpenses),
         spendingByMonth: getMonthlyBreakdown(monthlyTrendExpenses, monthlyTrendRange.months),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/monthly-category-comparison", async (req, res, next) => {
+  try {
+    const startMonth = String(req.query.startMonth || "");
+    const endMonth = String(req.query.endMonth || "");
+
+    if (!isMonthString(startMonth) || !isMonthString(endMonth)) {
+      return next(new AppError("Start month and end month must use YYYY-MM format.", 400));
+    }
+
+    if (startMonth > endMonth) {
+      return next(new AppError("Start month cannot be after end month.", 400));
+    }
+
+    const [startYear, startMonthNumber] = startMonth.split("-").map(Number);
+    const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
+
+    if (
+      startMonthNumber < 1 ||
+      startMonthNumber > 12 ||
+      endMonthNumber < 1 ||
+      endMonthNumber > 12
+    ) {
+      return next(new AppError("Month values must be between 01 and 12.", 400));
+    }
+
+    const monthKeys = getMonthKeysBetween(startMonth, endMonth);
+    const start = getMonthRange(new Date(Date.UTC(startYear, startMonthNumber - 1, 1))).start;
+    const end = getMonthRange(new Date(Date.UTC(endYear, endMonthNumber - 1, 1))).end;
+    const userSupabase = createUserSupabaseClient(req.accessToken);
+    const expensesResult = await userSupabase
+      .from("expenses")
+      .select(expenseSelect)
+      .eq("user_id", req.user.id)
+      .gte("expense_date", start)
+      .lte("expense_date", end)
+      .order("expense_date", { ascending: true });
+
+    if (expensesResult.error) {
+      return next(new AppError(expensesResult.error.message, 400));
+    }
+
+    const expenses = expensesResult.data || [];
+
+    res.json({
+      success: true,
+      data: {
+        range: {
+          start,
+          end,
+          startMonth,
+          endMonth,
+        },
+        months: monthKeys,
+        totalAmount: sumExpenses(expenses),
+        totalExpenses: expenses.length,
+        categories: getMonthlyCategoryComparison(expenses, monthKeys),
       },
     });
   } catch (error) {

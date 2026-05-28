@@ -38,6 +38,7 @@
   - [x] user_profiles
   - [x] budgets
 - [x] Setup Row Level Security (RLS) policies
+- [x] Add explicit Data API grants for public tables and views
 - [x] Create database indexes
 - [x] Create analytics views
 - [x] Create stored procedures

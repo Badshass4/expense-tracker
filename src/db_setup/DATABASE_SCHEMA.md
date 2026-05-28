@@ -105,6 +105,13 @@
    - Shows total spending per category
    - Includes average expense amount
 
+## Data API Grants
+
+The schema explicitly grants public table access to `anon`, `authenticated`, and `service_role` so new Supabase projects created on or after May 30, 2026 can access the tables through PostgREST, GraphQL, and `supabase-js`.
+
+- Tables: `SELECT`, `INSERT`, `UPDATE`, `DELETE`
+- Analytics views: `SELECT`
+
 ## Stored Procedures
 
 1. **get_expense_summary(user_id, start_date, end_date)**

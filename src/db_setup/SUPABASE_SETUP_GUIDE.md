@@ -135,6 +135,12 @@ Two pre-built views for analytics:
 - `get_expense_summary()` - Get overall expense statistics
 - `get_monthly_breakdown()` - Get expenses for a specific month
 
+### Data API Grants
+
+The schema includes explicit `GRANT` statements for the public tables and analytics views. This is required for new Supabase projects created on or after May 30, 2026, where tables in the `public` schema are no longer exposed to PostgREST, GraphQL, or `supabase-js` by default.
+
+When adding a new public table, add its `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ... TO anon, authenticated, service_role;` statement in the same migration as the table, RLS, and policies.
+
 ## API Keys Configuration
 
 ### For Backend (.env)
@@ -181,6 +187,10 @@ VALUES ('your-user-id', 'category-id', 'Test expense', 50.00, NOW());
 ### Problem: "RLS policies prevent access"
 
 **Solution**: Ensure you're accessing data for the authenticated user only.
+
+### Problem: "permission denied for table" or PostgREST suggests a GRANT
+
+**Solution**: Re-run the `Data API Grants` section from `supabase_schema.sql`, or add the missing table-specific grant shown in the PostgREST error hint.
 
 ## Next Steps
 

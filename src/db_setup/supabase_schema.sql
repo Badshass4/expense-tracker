@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS savings_goals (
 );
 
 -- ===========================
+-- Data API Grants
+-- ===========================
+
+-- Supabase projects created on or after May 30, 2026 do not expose new
+-- public tables to PostgREST, GraphQL, or supabase-js unless grants are
+-- explicitly included with the table migration.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+  categories,
+  expenses,
+  user_profiles,
+  budgets,
+  cash_accounts,
+  income_entries,
+  savings_goals
+TO anon, authenticated, service_role;
+
+-- ===========================
 -- Create Indexes for Performance
 -- ===========================
 
@@ -315,6 +332,11 @@ SELECT
 FROM expenses e
 JOIN categories c ON e.category_id = c.id
 GROUP BY e.user_id, c.id, c.name, c.color;
+
+GRANT SELECT ON TABLE
+  monthly_spending_summary,
+  spending_by_category
+TO anon, authenticated, service_role;
 
 -- ===========================
 -- Stored Procedures for Backend

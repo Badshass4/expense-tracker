@@ -84,6 +84,8 @@ expense-tracker/
 4. Click **Run**
 5. ✅ Wait for success message
 
+The schema includes explicit Data API grants for Supabase projects created on or after May 30, 2026. When you add another public table later, add its grant in the same SQL migration as the table, RLS, and policies.
+
 **Step 3: Verify Tables**
 
 - Go to **Table Editor** in sidebar
@@ -200,6 +202,12 @@ Analytics
 - Enforced at database level
 - Automatic on all tables
 
+### Data API Grants
+
+- Public tables are explicitly granted to `anon`, `authenticated`, and `service_role`
+- Analytics views are explicitly granted `SELECT`
+- These grants keep PostgREST, GraphQL, and `supabase-js` access working on new Supabase projects
+
 ### Authentication
 
 - Email/Password via Supabase Auth
@@ -286,6 +294,11 @@ Analytics
 - This means authentication is working!
 - Ensure you're logged in with correct user
 - Check RLS policies in Supabase dashboard
+
+### "permission denied for table"
+
+- Re-run the Data API grants in `supabase_schema.sql`
+- For new tables, add `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE your_table TO anon, authenticated, service_role;`
 
 ---
 

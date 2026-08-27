@@ -90,6 +90,22 @@ const getMonthKeysBetween = (startMonth, endMonth) => {
 const sumExpenses = (expenses) =>
   expenses.reduce((total, expense) => total + Number(expense.amount || 0), 0);
 
+const applyExpenseSort = (query, sortBy, sortDirection) => {
+  const ascending = sortDirection === "asc";
+
+  switch (sortBy) {
+    case "description":
+      return query.order("description", { ascending }).order("created_at", { ascending: false });
+    case "category":
+      return query.order("categories(name)", { ascending }).order("created_at", { ascending: false });
+    case "amount":
+      return query.order("amount", { ascending }).order("created_at", { ascending: false });
+    case "date":
+    default:
+      return query.order("expense_date", { ascending }).order("created_at", { ascending: false });
+  }
+};
+
 const sumIncome = (incomeEntries, range) =>
   incomeEntries.reduce((total, income) => total + getIncomeContributionForRange(income, range), 0);
 
@@ -466,15 +482,17 @@ router.get("/expenses", async (req, res, next) => {
     const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+    const sortBy = ["description", "category", "date", "amount"].includes(req.query.sortBy)
+      ? req.query.sortBy
+      : "date";
+    const sortDirection = req.query.sortDirection === "asc" ? "asc" : "desc";
     const buildReportQuery = () =>
       userSupabase
-      .from("expenses")
-      .select(expenseSelect, { count: "exact" })
-      .eq("user_id", req.user.id)
-      .gte("expense_date", range.start)
-      .lte("expense_date", range.end)
-      .order("expense_date", { ascending: false })
-      .order("created_at", { ascending: false });
+        .from("expenses")
+        .select(expenseSelect, { count: "exact" })
+        .eq("user_id", req.user.id)
+        .gte("expense_date", range.start)
+        .lte("expense_date", range.end);
     let reportQuery = buildReportQuery();
     let monthlyTrendQuery = userSupabase
       .from("expenses")
@@ -493,8 +511,7 @@ router.get("/expenses", async (req, res, next) => {
       monthlyTrendQuery = monthlyTrendQuery.eq("category_id", req.query.categoryId);
     }
 
-    let pagedReportQuery = buildReportQuery()
-      .range(from, to);
+    let pagedReportQuery = applyExpenseSort(buildReportQuery(), sortBy, sortDirection).range(from, to);
 
     if (req.query.search) {
       pagedReportQuery = pagedReportQuery.ilike("description", `%${req.query.search}%`);

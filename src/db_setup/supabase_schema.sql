@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS trips (
   CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
 );
 
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE CASCADE;
 
 -- 4. Create User Profiles Table (for additional user data)
 CREATE TABLE IF NOT EXISTS user_profiles (

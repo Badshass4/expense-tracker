@@ -12,7 +12,13 @@ CREATE TABLE IF NOT EXISTS trips (
   CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
 );
 
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE CASCADE;
+
+-- Upgrade installations that previously used SET NULL for this relationship.
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_trip_id_fkey;
+ALTER TABLE expenses
+  ADD CONSTRAINT expenses_trip_id_fkey
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE trips TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_expenses_trip_id ON expenses(trip_id);
 CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id);

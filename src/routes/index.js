@@ -8,6 +8,7 @@ const analyticsRoutes = require("./analytics");
 const profileRoutes = require("./profile");
 const incomeRoutes = require("./income");
 const savingsRoutes = require("./savings");
+const tripRoutes = require("./trips");
 
 const router = express.Router();
 
@@ -23,5 +24,6 @@ router.use("/analytics", authMiddleware, analyticsRoutes);
 router.use("/profile", authMiddleware, profileRoutes);
 router.use("/income", authMiddleware, incomeRoutes);
 router.use("/savings", authMiddleware, savingsRoutes);
+router.use("/trips", authMiddleware, tripRoutes);
 
 module.exports = router;

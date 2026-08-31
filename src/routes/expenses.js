@@ -13,6 +13,7 @@ const expenseSelect = `
   expense_date,
   notes,
   receipt_url,
+  trip_id,
   created_at,
   updated_at,
   categories (
@@ -23,14 +24,23 @@ const expenseSelect = `
   )
 `;
 
-const toExpensePayload = (body, userId) => ({
-  user_id: userId,
-  category_id: body.categoryId || body.category_id,
-  description: String(body.description || "").trim(),
-  amount: Number(body.amount),
-  expense_date: body.expenseDate || body.expense_date,
-  notes: body.notes ? String(body.notes).trim() : null,
-});
+const toExpensePayload = (body, userId) => {
+  const payload = {
+    user_id: userId,
+    category_id: body.categoryId || body.category_id,
+    description: String(body.description || "").trim(),
+    amount: Number(body.amount),
+    expense_date: body.expenseDate || body.expense_date,
+    notes: body.notes ? String(body.notes).trim() : null,
+  };
+
+  // Leave the association unchanged on the existing general expense edit form.
+  if (Object.hasOwn(body, "tripId") || Object.hasOwn(body, "trip_id")) {
+    payload.trip_id = body.tripId || body.trip_id || null;
+  }
+
+  return payload;
+};
 
 const validateExpensePayload = (payload) => {
   if (!payload.description) {
@@ -65,7 +75,7 @@ const parsePositiveInt = (value, fallback) => {
 router.get("/", async (req, res, next) => {
   try {
     const userSupabase = createUserSupabaseClient(req.accessToken);
-    const { search, date, categoryId } = req.query;
+    const { search, date, categoryId, tripId } = req.query;
     const page = parsePositiveInt(req.query.page, 1);
     const limit = Math.min(parsePositiveInt(req.query.limit, 10), 100);
     const from = (page - 1) * limit;
@@ -89,6 +99,10 @@ router.get("/", async (req, res, next) => {
 
     if (categoryId) {
       query = query.eq("category_id", categoryId);
+    }
+
+    if (tripId) {
+      query = query.eq("trip_id", tripId);
     }
 
     const { data, error, count } = await query;

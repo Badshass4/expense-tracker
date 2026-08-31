@@ -30,6 +30,22 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 
 -- 3. Create User Profiles Table (for additional user data)
+CREATE TABLE IF NOT EXISTS trips (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  destination VARCHAR(120),
+  start_date DATE,
+  end_date DATE,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now(),
+  CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE SET NULL;
+
+-- 4. Create User Profiles Table (for additional user data)
 CREATE TABLE IF NOT EXISTS user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name VARCHAR(100),
@@ -111,6 +127,7 @@ CREATE TABLE IF NOT EXISTS savings_goals (
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   categories,
   expenses,
+  trips,
   user_profiles,
   budgets,
   cash_accounts,
@@ -126,6 +143,8 @@ CREATE INDEX idx_expenses_user_id ON expenses(user_id);
 CREATE INDEX idx_expenses_category_id ON expenses(category_id);
 CREATE INDEX idx_expenses_date ON expenses(expense_date);
 CREATE INDEX idx_expenses_user_date ON expenses(user_id, expense_date);
+CREATE INDEX IF NOT EXISTS idx_expenses_trip_id ON expenses(trip_id);
+CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id);
 CREATE INDEX idx_categories_user_id ON categories(user_id);
 CREATE INDEX idx_budgets_user_id ON budgets(user_id);
 CREATE INDEX idx_cash_accounts_user_id ON cash_accounts(user_id);
@@ -140,6 +159,7 @@ CREATE INDEX idx_savings_goals_user_id ON savings_goals(user_id);
 
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cash_accounts ENABLE ROW LEVEL SECURITY;
@@ -174,6 +194,19 @@ CREATE POLICY "Users can update own expenses" ON expenses
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own expenses" ON expenses
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Trips: Users can only access their own trips
+CREATE POLICY "Users can view own trips" ON trips
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own trips" ON trips
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own trips" ON trips
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own trips" ON trips
   FOR DELETE USING (auth.uid() = user_id);
 
 -- User Profiles: Users can only see and edit their own profile

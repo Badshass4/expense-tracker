@@ -395,6 +395,7 @@ router.get("/summary", async (req, res, next) => {
         .from("expenses")
         .select(expenseSelect)
         .eq("user_id", req.user.id)
+        .is("trip_id", null)
         .gte("expense_date", currentMonth.start)
         .lte("expense_date", currentMonth.end)
         .order("expense_date", { ascending: false })
@@ -403,12 +404,14 @@ router.get("/summary", async (req, res, next) => {
         .from("expenses")
         .select("id, amount")
         .eq("user_id", req.user.id)
+        .is("trip_id", null)
         .gte("expense_date", previousMonth.start)
         .lte("expense_date", previousMonth.end),
       userSupabase
         .from("expenses")
         .select(expenseSelect)
         .eq("user_id", req.user.id)
+        .is("trip_id", null)
         .order("expense_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(5),
@@ -491,6 +494,7 @@ router.get("/expenses", async (req, res, next) => {
         .from("expenses")
         .select(expenseSelect, { count: "exact" })
         .eq("user_id", req.user.id)
+        .is("trip_id", null)
         .gte("expense_date", range.start)
         .lte("expense_date", range.end);
     let reportQuery = buildReportQuery();
@@ -498,6 +502,7 @@ router.get("/expenses", async (req, res, next) => {
       .from("expenses")
       .select("id, amount, expense_date")
       .eq("user_id", req.user.id)
+      .is("trip_id", null)
       .gte("expense_date", monthlyTrendRange.start)
       .lte("expense_date", monthlyTrendRange.end);
 
@@ -628,6 +633,7 @@ router.get("/monthly-category-comparison", async (req, res, next) => {
       .from("expenses")
       .select(expenseSelect)
       .eq("user_id", req.user.id)
+      .is("trip_id", null)
       .gte("expense_date", start)
       .lte("expense_date", end)
       .order("expense_date", { ascending: true });

@@ -103,6 +103,8 @@ router.get("/", async (req, res, next) => {
 
     if (tripId) {
       query = query.eq("trip_id", tripId);
+    } else {
+      query = query.is("trip_id", null);
     }
 
     const { data, error, count } = await query;
